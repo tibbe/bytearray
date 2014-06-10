@@ -1,7 +1,34 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Data.ByteArray where
+module Data.ByteArray
+    (
+      ByteArray
+    , MutableByteArray
+    , ByteArrayElem(..)
+
+      -- Creating byte arrays
+    , new
+    , newPinned
+    , newAlignedPinned
+
+    , unsafeFreeze
+    , unsafeThaw
+    , sizeOfByteArray
+    , sizeOfMutableByteArray
+    , sameMutableByteArray
+    , sameByteArray
+
+      -- * Copying byte arrays
+    , copyByteArray
+    , copyByteArrayToMutableByteArray
+    , copyByteArrayToPtr
+    , copyMutableByteArray
+    , copyMutableByteArrayToByteArray
+    , copyMutableByteArrayToPtr
+    , copyPtrToByteArray
+    , copyPtrToMutableByteArray
+    ) where
 
 import Data.Bits (bitSize, unsafeShiftL, unsafeShiftR)
 import Data.Word
@@ -71,7 +98,7 @@ instance ByteArrayElem Word where
             s2 -> (# s2, () #)
     writeByteOff mba i x = writeElemOff mba (i `unsafeShiftR` wordShift) x
     writeByteOffUnaligned mba i x = writeByteOffUnalignedWord mba i x
-    
+
     sizeOf _ = wordSize
     alignment _ = wordSize
 
@@ -89,7 +116,7 @@ instance ByteArrayElem Char where
     writeByteOff mba i x = writeByteOff mba i (fromIntegral $ fromEnum x :: Word)
     writeByteOffUnaligned mba i x = writeByteOffUnaligned mba i
                                     (fromIntegral $ fromEnum x :: Word)
-    
+
     sizeOf _ = wordSize
     alignment _ = wordSize
 
@@ -174,6 +201,25 @@ writeByteOffUnalignedWord mba i x
 -- indexWord8Array# :: ByteArray# -> Int# -> Word#
 -- indexWordArray# :: ByteArray# -> Int# -> Word#
 
+-- ---------------------------------------------------------------------
+-- Creating byte arrays
+
+new :: Int -> ST s (MutableByteArray s)
+new (I# n) = ST $ \ s -> case newByteArray# n s of
+    (# s2, mba #) -> (# s2, MBA mba #)
+
+newPinned :: Int -> ST s (MutableByteArray s)
+newPinned (I# n) = ST $ \ s -> case newPinnedByteArray# n s of
+    (# s2, mba #) -> (# s2, MBA mba #)
+
+newAlignedPinned :: Int -> Int -> ST s (MutableByteArray s)
+newAlignedPinned (I# n) (I# align)= ST $ \ s ->
+    case newAlignedPinnedByteArray# n align s of
+        (# s2, mba #) -> (# s2, MBA mba #)
+
+-- ---------------------------------------------------------------------
+-- Copying byte arrays
+
 copyByteArray :: ByteArray -> Int -> Int -> ByteArray
 copyByteArray = undefined
 
@@ -202,19 +248,6 @@ copyPtrToByteArray = undefined
 copyPtrToMutableByteArray :: Ptr Word8 -> MutableByteArray RealWorld -> Int
                           -> Int -> IO ()
 copyPtrToMutableByteArray = undefined
-
-new :: Int -> ST s (MutableByteArray s)
-new (I# n) = ST $ \ s -> case newByteArray# n s of
-    (# s2, mba #) -> (# s2, MBA mba #)
-
-newPinned :: Int -> ST s (MutableByteArray s)
-newPinned (I# n) = ST $ \ s -> case newPinnedByteArray# n s of
-    (# s2, mba #) -> (# s2, MBA mba #)
-
-newAlignedPinned :: Int -> Int -> ST s (MutableByteArray s)
-newAlignedPinned (I# n) (I# align)= ST $ \ s ->
-    case newAlignedPinnedByteArray# n align s of
-        (# s2, mba #) -> (# s2, MBA mba #)
 
 unsafeFreeze :: MutableByteArray s -> ST s ByteArray
 unsafeFreeze (MBA mba) = ST $ \ s -> case unsafeFreezeByteArray# mba s of
