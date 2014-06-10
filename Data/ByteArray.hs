@@ -41,8 +41,18 @@ instance ByteArrayElem Word8 where
     indexElemOff (BA ba) (I# i) = W8# (indexWord8Array# ba i)
     indexByteOff ba i = indexElemOff ba i
     indexByteOffUnaligned ba i = indexElemOff ba i
+
+    readElemOff (MBA mba) (I# i) = ST $ \ s -> case readWord8Array# mba i s of
+        (# s2, x #) -> (# s2, W8# x #)
     readByteOff ba i = readElemOff ba i
+    readByteOffUnaligned mba i = readByteOff mba i
+
+    writeElemOff (MBA mba) (I# i) (W8# x) = ST $ \ s ->
+        case writeWord8Array# mba i x s of
+            s2 -> (# s2, () #)
     writeByteOff ba i x = writeElemOff ba i x
+    writeByteOffUnaligned mba i x = writeByteOff mba i x
+
     sizeOf _ = 1
     alignment _ = 1
 
@@ -56,8 +66,9 @@ instance ByteArrayElem Word where
     readByteOff mba i = readElemOff mba (i `unsafeShiftR` wordShift)
     readByteOffUnaligned mba i = readByteOffUnalignedWord mba i
 
-    writeElemOff (MBA mba) (I# i) (W# x) = ST $ \ s -> case writeWordArray# mba i x s of
-        s2 -> (# s2, () #)
+    writeElemOff (MBA mba) (I# i) (W# x) = ST $ \ s ->
+        case writeWordArray# mba i x s of
+            s2 -> (# s2, () #)
     writeByteOff mba i x = writeElemOff mba (i `unsafeShiftR` wordShift) x
     writeByteOffUnaligned mba i x = writeByteOffUnalignedWord mba i x
     
@@ -162,3 +173,64 @@ writeByteOffUnalignedWord mba i x
 -- indexWord64Array# :: ByteArray# -> Int# -> Word#
 -- indexWord8Array# :: ByteArray# -> Int# -> Word#
 -- indexWordArray# :: ByteArray# -> Int# -> Word#
+
+copyByteArray :: ByteArray -> Int -> Int -> ByteArray
+copyByteArray = undefined
+
+copyByteArrayToMutableByteArray :: ByteArray -> Int -> MutableByteArray s -> Int
+                                -> Int -> ST s ()
+copyByteArrayToMutableByteArray = undefined
+
+copyByteArrayToPtr :: ByteArray -> Int -> Int -> Ptr Word8 -> IO ()
+copyByteArrayToPtr = undefined
+
+copyMutableByteArray :: MutableByteArray s -> Int -> MutableByteArray s -> Int
+                     -> Int -> ST s ()
+copyMutableByteArray = undefined
+
+copyMutableByteArrayToByteArray :: MutableByteArray s -> Int -> Int
+                                -> ST s ByteArray
+copyMutableByteArrayToByteArray = undefined
+
+copyMutableByteArrayToPtr :: MutableByteArray RealWorld -> Int -> Ptr Word8
+                          -> Int -> IO ()
+copyMutableByteArrayToPtr = undefined
+
+copyPtrToByteArray :: Ptr Word8 -> Int -> Int -> IO ByteArray
+copyPtrToByteArray = undefined
+
+copyPtrToMutableByteArray :: Ptr Word8 -> MutableByteArray RealWorld -> Int
+                          -> Int -> IO ()
+copyPtrToMutableByteArray = undefined
+
+new :: Int -> ST s (MutableByteArray s)
+new (I# n) = ST $ \ s -> case newByteArray# n s of
+    (# s2, mba #) -> (# s2, MBA mba #)
+
+newPinned :: Int -> ST s (MutableByteArray s)
+newPinned (I# n) = ST $ \ s -> case newPinnedByteArray# n s of
+    (# s2, mba #) -> (# s2, MBA mba #)
+
+newAlignedPinned :: Int -> Int -> ST s (MutableByteArray s)
+newAlignedPinned (I# n) (I# align)= ST $ \ s ->
+    case newAlignedPinnedByteArray# n align s of
+        (# s2, mba #) -> (# s2, MBA mba #)
+
+unsafeFreeze :: MutableByteArray s -> ST s ByteArray
+unsafeFreeze (MBA mba) = ST $ \ s -> case unsafeFreezeByteArray# mba s of
+    (# s2, ba #) -> (# s2, BA ba #)
+
+unsafeThaw :: ByteArray -> ST s (MutableByteArray s)
+unsafeThaw = unsafeCoerce#
+
+sizeOfByteArray :: ByteArray -> Int
+sizeOfByteArray (BA ba) = I# (sizeofByteArray# ba)
+
+sizeOfMutableByteArray :: MutableByteArray s -> Int
+sizeOfMutableByteArray (MBA mba) = I# (sizeofMutableByteArray# mba)
+
+sameMutableByteArray :: MutableByteArray s -> MutableByteArray s -> Bool
+sameMutableByteArray (MBA mba1) (MBA mba2) = sameMutableByteArray# mba1 mba2
+
+sameByteArray :: ByteArray -> ByteArray -> Bool
+sameByteArray (BA ba1) (BA ba2) = undefined
