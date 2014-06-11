@@ -3,31 +3,54 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Data.ByteArray
     (
+      -- * The byte array types
       ByteArray
     , MutableByteArray
+
+      -- * Reading and writing
     , ByteArrayElem(..)
 
-      -- Creating byte arrays
+      -- * Creating
+    , Pinned
+    , Unpinned
     , new
     , newPinned
     , newAlignedPinned
 
-    , unsafeFreeze
-    , unsafeThaw
+      -- * Size
     , sizeOfByteArray
     , sizeOfMutableByteArray
-    , sameMutableByteArray
-    , sameByteArray
 
-      -- * Copying byte arrays
+      -- * Comparing
+    , sameByteArray
+    , sameMutableByteArray
+    , compareByteArray
+    , compareMutableByteArray
+    , compareByteArrayToMutableByteArray
+
+      -- * Copying
     , copyByteArray
-    , copyByteArrayToMutableByteArray
-    , copyByteArrayToPtr
     , copyMutableByteArray
-    , copyMutableByteArrayToByteArray
+    , copyByteArrayToPtr
     , copyMutableByteArrayToPtr
-    , copyPtrToByteArray
     , copyPtrToMutableByteArray
+    , fillByteArray
+
+      -- * Freezing and thawing
+    , unsafeFreeze
+    , unsafeThaw
+
+      -- * Converting between pinned and unpinned
+    , byteArrayAsPinned
+    , byteArrayAsUnpinned
+    , mutableByteArrayAsPinned
+    , mutableByteArrayAsUnpinned
+    , byteArrayContents
+    , mutableByteArrayContents
+
+      -- * Searching
+    , findIndexByteArray
+    , findIndexMutableByteArray
     ) where
 
 import Data.Bits (bitSize, unsafeShiftL, unsafeShiftR)
@@ -36,9 +59,9 @@ import GHC.Exts
 import GHC.ST
 import GHC.Word
 
-data ByteArray = BA ByteArray#
+data ByteArray p = BA ByteArray#
 
-data MutableByteArray s = MBA (MutableByteArray# s)
+data MutableByteArray p s = MBA (MutableByteArray# s)
 
 wordSize :: Int
 wordSize = 1 `unsafeShiftL` (bitSize (undefined :: Int))
@@ -49,17 +72,17 @@ wordShift
     | otherwise     = 3
 
 class ByteArrayElem a where
-    indexElemOff :: ByteArray -> Int -> a
-    indexByteOff :: ByteArray -> Int -> a
-    indexByteOffUnaligned :: ByteArray -> Int -> a
+    indexElemOff :: ByteArray p -> Int -> a
+    indexByteOff :: ByteArray p -> Int -> a
+    indexByteOffUnaligned :: ByteArray p -> Int -> a
 
-    readElemOff :: MutableByteArray s -> Int -> ST s a
-    readByteOff :: MutableByteArray s -> Int -> ST s a
-    readByteOffUnaligned :: MutableByteArray s -> Int -> ST s a
+    readElemOff :: MutableByteArray p s -> Int -> ST s a
+    readByteOff :: MutableByteArray p s -> Int -> ST s a
+    readByteOffUnaligned :: MutableByteArray p s -> Int -> ST s a
 
-    writeElemOff :: MutableByteArray s -> Int -> a -> ST s ()
-    writeByteOff :: MutableByteArray s -> Int -> a -> ST s ()
-    writeByteOffUnaligned :: MutableByteArray s -> Int -> a -> ST s ()
+    writeElemOff :: MutableByteArray p s -> Int -> a -> ST s ()
+    writeByteOff :: MutableByteArray p s -> Int -> a -> ST s ()
+    writeByteOffUnaligned :: MutableByteArray p s -> Int -> a -> ST s ()
 
     sizeOf :: a -> Int
     alignment :: a -> Int
@@ -122,7 +145,7 @@ instance ByteArrayElem Char where
 
 -- TODO: Move these helpers into the instances and call them from the
 --     Word instance.
-indexByteOffUnalignedWord :: ByteArray -> Int -> Word
+indexByteOffUnalignedWord :: ByteArray p -> Int -> Word
 indexByteOffUnalignedWord ba i
     | wordSize == 4 =
         fromIntegral (indexElemOff ba i :: Word8) +
@@ -139,7 +162,7 @@ indexByteOffUnalignedWord ba i
         fromIntegral (indexElemOff ba (i+6) :: Word8) `unsafeShiftL` 48 +
         fromIntegral (indexElemOff ba (i+7) :: Word8) `unsafeShiftL` 56
 
-readByteOffUnalignedWord :: MutableByteArray s -> Int -> ST s Word
+readByteOffUnalignedWord :: MutableByteArray p s -> Int -> ST s Word
 readByteOffUnalignedWord mba i
     | wordSize == 4 = do
         x1 :: Word8 <- readElemOff mba i
@@ -168,7 +191,7 @@ readByteOffUnalignedWord mba i
             fromIntegral x7 `unsafeShiftL` 48 +
             fromIntegral x8 `unsafeShiftL` 56
 
-writeByteOffUnalignedWord :: MutableByteArray s -> Int -> Word -> ST s ()
+writeByteOffUnalignedWord :: MutableByteArray p s -> Int -> Word -> ST s ()
 writeByteOffUnalignedWord mba i x
     | wordSize == 4 = do
         writeElemOff mba i (fromIntegral x :: Word8)
@@ -204,15 +227,18 @@ writeByteOffUnalignedWord mba i x
 -- ---------------------------------------------------------------------
 -- Creating byte arrays
 
-new :: Int -> ST s (MutableByteArray s)
+data Unpinned
+data Pinned
+
+new :: Int -> ST s (MutableByteArray Unpinned s)
 new (I# n) = ST $ \ s -> case newByteArray# n s of
     (# s2, mba #) -> (# s2, MBA mba #)
 
-newPinned :: Int -> ST s (MutableByteArray s)
+newPinned :: Int -> ST s (MutableByteArray Pinned s)
 newPinned (I# n) = ST $ \ s -> case newPinnedByteArray# n s of
     (# s2, mba #) -> (# s2, MBA mba #)
 
-newAlignedPinned :: Int -> Int -> ST s (MutableByteArray s)
+newAlignedPinned :: Int -> Int -> ST s (MutableByteArray Pinned s)
 newAlignedPinned (I# n) (I# align)= ST $ \ s ->
     case newAlignedPinnedByteArray# n align s of
         (# s2, mba #) -> (# s2, MBA mba #)
@@ -220,50 +246,97 @@ newAlignedPinned (I# n) (I# align)= ST $ \ s ->
 -- ---------------------------------------------------------------------
 -- Copying byte arrays
 
-copyByteArray :: ByteArray -> Int -> Int -> ByteArray
+copyByteArray :: ByteArray p -> Int -> MutableByteArray p' s -> Int
+              -> Int -> ST s ()
 copyByteArray = undefined
 
-copyByteArrayToMutableByteArray :: ByteArray -> Int -> MutableByteArray s -> Int
-                                -> Int -> ST s ()
-copyByteArrayToMutableByteArray = undefined
-
-copyByteArrayToPtr :: ByteArray -> Int -> Int -> Ptr Word8 -> IO ()
-copyByteArrayToPtr = undefined
-
-copyMutableByteArray :: MutableByteArray s -> Int -> MutableByteArray s -> Int
+copyMutableByteArray :: MutableByteArray p s -> Int -> MutableByteArray p' s -> Int
                      -> Int -> ST s ()
 copyMutableByteArray = undefined
 
-copyMutableByteArrayToByteArray :: MutableByteArray s -> Int -> Int
-                                -> ST s ByteArray
-copyMutableByteArrayToByteArray = undefined
+copyByteArrayToPtr :: ByteArray p -> Int -> Ptr Word8 -> Int -> IO ()
+copyByteArrayToPtr = undefined
 
-copyMutableByteArrayToPtr :: MutableByteArray RealWorld -> Int -> Ptr Word8
+copyMutableByteArrayToPtr :: MutableByteArray p RealWorld -> Int -> Ptr Word8
                           -> Int -> IO ()
 copyMutableByteArrayToPtr = undefined
 
-copyPtrToByteArray :: Ptr Word8 -> Int -> Int -> IO ByteArray
-copyPtrToByteArray = undefined
-
-copyPtrToMutableByteArray :: Ptr Word8 -> MutableByteArray RealWorld -> Int
+copyPtrToMutableByteArray :: Ptr Word8 -> MutableByteArray p RealWorld -> Int
                           -> Int -> IO ()
 copyPtrToMutableByteArray = undefined
 
-unsafeFreeze :: MutableByteArray s -> ST s ByteArray
+-- ---------------------------------------------------------------------
+-- Freezing and thawing
+
+unsafeFreeze :: MutableByteArray p s -> ST s (ByteArray p)
 unsafeFreeze (MBA mba) = ST $ \ s -> case unsafeFreezeByteArray# mba s of
     (# s2, ba #) -> (# s2, BA ba #)
 
-unsafeThaw :: ByteArray -> ST s (MutableByteArray s)
-unsafeThaw = unsafeCoerce#
+unsafeThaw :: ByteArray p -> ST s (MutableByteArray p s)
+unsafeThaw (BA ba) = return (MBA (unsafeCoerce# ba))
 
-sizeOfByteArray :: ByteArray -> Int
+-- ---------------------------------------------------------------------
+-- Size
+
+sizeOfByteArray :: ByteArray p -> Int
 sizeOfByteArray (BA ba) = I# (sizeofByteArray# ba)
 
-sizeOfMutableByteArray :: MutableByteArray s -> Int
+sizeOfMutableByteArray :: MutableByteArray p s -> Int
 sizeOfMutableByteArray (MBA mba) = I# (sizeofMutableByteArray# mba)
 
-sameMutableByteArray :: MutableByteArray s -> MutableByteArray s -> Bool
+byteArrayContents :: ByteArray Pinned -> Ptr Word8
+byteArrayContents = undefined
+
+mutableByteArrayContents :: MutableByteArray Pinned s -> Ptr Word8
+mutableByteArrayContents = byteArrayContents . unsafeCoerce#
+
+fillByteArray :: MutableByteArray p s -> Int -> Int -> Int -> ST s ()
+fillByteArray = undefined
+
+findIndexByteArray :: ByteArray p -> Int -> Int -> Word8 -> Int
+findIndexByteArray = undefined
+
+findIndexMutableByteArray :: MutableByteArray p s -> Int -> Int -> Word8 -> ST s Int
+findIndexMutableByteArray = undefined
+
+-- ---------------------------------------------------------------------
+-- Comparing
+
+compareByteArray :: ByteArray p -> Int -> ByteArray p' -> Int -> Int -> Int
+compareByteArray = undefined
+
+compareMutableByteArray :: MutableByteArray p s -> Int -> MutableByteArray p' s
+                        -> Int -> Int -> ST s Int
+compareMutableByteArray = undefined
+
+compareByteArrayToMutableByteArray :: ByteArray p -> Int
+                                   -> MutableByteArray p' s -> Int -> Int
+                                   -> ST s Int
+compareByteArrayToMutableByteArray = undefined
+
+sameByteArray :: ByteArray p -> ByteArray p' -> Bool
+sameByteArray (BA ba1) (BA ba2) = sameMutableByteArray (unsafeCoerce# ba1)
+                                  (unsafeCoerce# ba2)
+
+sameMutableByteArray :: MutableByteArray p s -> MutableByteArray p' s -> Bool
 sameMutableByteArray (MBA mba1) (MBA mba2) = sameMutableByteArray# mba1 mba2
 
-sameByteArray :: ByteArray -> ByteArray -> Bool
-sameByteArray (BA ba1) (BA ba2) = undefined
+-- ---------------------------------------------------------------------
+-- Converting between pinned and unpinned byte arrays
+
+byteArrayAsPinned :: ByteArray Unpinned -> Maybe (ByteArray Pinned)
+byteArrayAsPinned = undefined
+
+byteArrayAsUnpinned :: ByteArray Pinned -> ByteArray Unpinned
+byteArrayAsUnpinned = unsafeCoerce#
+
+mutableByteArrayAsPinned :: MutableByteArray Unpinned s -> Maybe (MutableByteArray Pinned s)
+mutableByteArrayAsPinned = undefined
+
+mutableByteArrayAsUnpinned :: MutableByteArray Pinned s -> MutableByteArray Unpinned s
+mutableByteArrayAsUnpinned = undefined
+
+{-
+Primops to implement:
+ * Byte-offset reads/writes that are unaligned/aligned
+-}
