@@ -238,7 +238,9 @@ newPinned :: Int -> ST s (MutableByteArray Pinned s)
 newPinned (I# n) = ST $ \ s -> case newPinnedByteArray# n s of
     (# s2, mba #) -> (# s2, MBA mba #)
 
-newAlignedPinned :: Int -> Int -> ST s (MutableByteArray Pinned s)
+newAlignedPinned :: Int
+                 -> Int  -- ^ Alignment, in bytes. Must be power of 2
+                 -> ST s (MutableByteArray Pinned s)
 newAlignedPinned (I# n) (I# align)= ST $ \ s ->
     case newAlignedPinnedByteArray# n align s of
         (# s2, mba #) -> (# s2, MBA mba #)
@@ -246,21 +248,26 @@ newAlignedPinned (I# n) (I# align)= ST $ \ s ->
 -- ---------------------------------------------------------------------
 -- Copying byte arrays
 
+-- | The two arrays are not allowed to alias.
 copyByteArray :: ByteArray p -> Int -> MutableByteArray p' s -> Int
               -> Int -> ST s ()
 copyByteArray = undefined
 
+-- | The two arrays are allowed to alias.
 copyMutableByteArray :: MutableByteArray p s -> Int -> MutableByteArray p' s -> Int
                      -> Int -> ST s ()
 copyMutableByteArray = undefined
 
+-- | The two arrays are not allowed to alias.
 copyByteArrayToPtr :: ByteArray p -> Int -> Ptr Word8 -> Int -> IO ()
 copyByteArrayToPtr = undefined
 
+-- | The two arrays are not allowed to alias.
 copyMutableByteArrayToPtr :: MutableByteArray p RealWorld -> Int -> Ptr Word8
                           -> Int -> IO ()
 copyMutableByteArrayToPtr = undefined
 
+-- | The two arrays are not allowed to alias.
 copyPtrToMutableByteArray :: Ptr Word8 -> MutableByteArray p RealWorld -> Int
                           -> Int -> IO ()
 copyPtrToMutableByteArray = undefined
@@ -268,10 +275,12 @@ copyPtrToMutableByteArray = undefined
 -- ---------------------------------------------------------------------
 -- Freezing and thawing
 
+-- | The mutable byte array must not be modified after freezing.
 unsafeFreeze :: MutableByteArray p s -> ST s (ByteArray p)
 unsafeFreeze (MBA mba) = ST $ \ s -> case unsafeFreezeByteArray# mba s of
     (# s2, ba #) -> (# s2, BA ba #)
 
+-- | The original byte array must not be used after thawing.
 unsafeThaw :: ByteArray p -> ST s (MutableByteArray p s)
 unsafeThaw (BA ba) = return (MBA (unsafeCoerce# ba))
 
@@ -290,25 +299,31 @@ byteArrayContents = undefined
 mutableByteArrayContents :: MutableByteArray Pinned s -> Ptr Word8
 mutableByteArrayContents = byteArrayContents . unsafeCoerce#
 
-fillByteArray :: MutableByteArray p s -> Int -> Int -> Int -> ST s ()
+fillByteArray :: MutableByteArray p s -> Int -> Int -> Word8 -> ST s ()
 fillByteArray = undefined
 
+-- | Returns -1 if the byte wasn't found.
 findIndexByteArray :: ByteArray p -> Int -> Int -> Word8 -> Int
 findIndexByteArray = undefined
 
-findIndexMutableByteArray :: MutableByteArray p s -> Int -> Int -> Word8 -> ST s Int
+-- | Returns -1 if the byte wasn't found.
+findIndexMutableByteArray :: MutableByteArray p s -> Int -> Int -> Word8
+                          -> ST s Int
 findIndexMutableByteArray = undefined
 
 -- ---------------------------------------------------------------------
 -- Comparing
 
+-- | See memchr (loose semantics) for details on the return value.
 compareByteArray :: ByteArray p -> Int -> ByteArray p' -> Int -> Int -> Int
 compareByteArray = undefined
 
+-- | See memchr (loose semantics) for details on the return value.
 compareMutableByteArray :: MutableByteArray p s -> Int -> MutableByteArray p' s
                         -> Int -> Int -> ST s Int
 compareMutableByteArray = undefined
 
+-- | See memchr (loose semantics) for details on the return value.
 compareByteArrayToMutableByteArray :: ByteArray p -> Int
                                    -> MutableByteArray p' s -> Int -> Int
                                    -> ST s Int
@@ -325,16 +340,24 @@ sameMutableByteArray (MBA mba1) (MBA mba2) = sameMutableByteArray# mba1 mba2
 -- Converting between pinned and unpinned byte arrays
 
 byteArrayAsPinned :: ByteArray Unpinned -> Maybe (ByteArray Pinned)
-byteArrayAsPinned = undefined
+byteArrayAsPinned (BA ba)
+    | isPinned ba = Just (BA (unsafeCoerce# ba))
+    | otherwise   = Nothing
+  where
+    isPinned = undefined
 
 byteArrayAsUnpinned :: ByteArray Pinned -> ByteArray Unpinned
-byteArrayAsUnpinned = unsafeCoerce#
+byteArrayAsUnpinned (BA ba) = BA (unsafeCoerce# ba)
 
 mutableByteArrayAsPinned :: MutableByteArray Unpinned s -> Maybe (MutableByteArray Pinned s)
-mutableByteArrayAsPinned = undefined
+mutableByteArrayAsPinned (MBA mba)
+    | isPinned mba = Just (MBA (unsafeCoerce# mba))
+    | otherwise    = Nothing
+  where
+    isPinned = undefined
 
 mutableByteArrayAsUnpinned :: MutableByteArray Pinned s -> MutableByteArray Unpinned s
-mutableByteArrayAsUnpinned = undefined
+mutableByteArrayAsUnpinned (MBA mba) = MBA (unsafeCoerce# mba)
 
 {-
 Primops to implement:
