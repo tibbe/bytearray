@@ -227,7 +227,10 @@ writeByteOffUnalignedWord mba i x
 -- ---------------------------------------------------------------------
 -- Creating byte arrays
 
+-- | The byte array is not know to be pinned, but might be.
 data Unpinned
+
+-- | The byte array is definitely pinned.
 data Pinned
 
 new :: Int -> ST s (MutableByteArray Unpinned s)
@@ -339,27 +342,28 @@ sameMutableByteArray (MBA mba1) (MBA mba2) = sameMutableByteArray# mba1 mba2
 -- ---------------------------------------------------------------------
 -- Converting between pinned and unpinned byte arrays
 
-byteArrayAsPinned :: ByteArray Unpinned -> Maybe (ByteArray Pinned)
+byteArrayAsPinned :: ByteArray a -> Maybe (ByteArray Pinned)
 byteArrayAsPinned (BA ba)
     | isPinned ba = Just (BA (unsafeCoerce# ba))
     | otherwise   = Nothing
   where
     isPinned = undefined
 
-byteArrayAsUnpinned :: ByteArray Pinned -> ByteArray Unpinned
+byteArrayAsUnpinned :: ByteArray a -> ByteArray Unpinned
 byteArrayAsUnpinned (BA ba) = BA (unsafeCoerce# ba)
 
-mutableByteArrayAsPinned :: MutableByteArray Unpinned s -> Maybe (MutableByteArray Pinned s)
+mutableByteArrayAsPinned :: MutableByteArray a s -> Maybe (MutableByteArray Pinned s)
 mutableByteArrayAsPinned (MBA mba)
     | isPinned mba = Just (MBA (unsafeCoerce# mba))
     | otherwise    = Nothing
   where
     isPinned = undefined
 
-mutableByteArrayAsUnpinned :: MutableByteArray Pinned s -> MutableByteArray Unpinned s
+mutableByteArrayAsUnpinned :: MutableByteArray a s -> MutableByteArray Unpinned s
 mutableByteArrayAsUnpinned (MBA mba) = MBA (unsafeCoerce# mba)
 
 {-
 Primops to implement:
  * Byte-offset reads/writes that are unaligned/aligned
+ * isPinned
 -}
