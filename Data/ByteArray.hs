@@ -342,24 +342,24 @@ sameMutableByteArray (MBA mba1) (MBA mba2) = sameMutableByteArray# mba1 mba2
 -- ---------------------------------------------------------------------
 -- Converting between pinned and unpinned byte arrays
 
-byteArrayAsPinned :: ByteArray a -> Maybe (ByteArray Pinned)
+byteArrayAsPinned :: ByteArray p -> Maybe (ByteArray Pinned)
 byteArrayAsPinned (BA ba)
     | isPinned ba = Just (BA (unsafeCoerce# ba))
     | otherwise   = Nothing
   where
     isPinned = undefined
 
-byteArrayAsUnpinned :: ByteArray a -> ByteArray Unpinned
+byteArrayAsUnpinned :: ByteArray p -> ByteArray Unpinned
 byteArrayAsUnpinned (BA ba) = BA (unsafeCoerce# ba)
 
-mutableByteArrayAsPinned :: MutableByteArray a s -> Maybe (MutableByteArray Pinned s)
+mutableByteArrayAsPinned :: MutableByteArray p s -> Maybe (MutableByteArray Pinned s)
 mutableByteArrayAsPinned (MBA mba)
     | isPinned mba = Just (MBA (unsafeCoerce# mba))
     | otherwise    = Nothing
   where
     isPinned = undefined
 
-mutableByteArrayAsUnpinned :: MutableByteArray a s -> MutableByteArray Unpinned s
+mutableByteArrayAsUnpinned :: MutableByteArray p s -> MutableByteArray Unpinned s
 mutableByteArrayAsUnpinned (MBA mba) = MBA (unsafeCoerce# mba)
 
 {-
